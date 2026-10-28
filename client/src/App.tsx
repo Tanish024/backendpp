@@ -10,6 +10,7 @@ import { WorkspacesPage } from './pages/WorkspacesPage.tsx';
 import { AcceptInvitePage } from './pages/AcceptInvitePage.tsx';
 import { ProjectsPage } from './pages/ProjectsPage.tsx';
 import { ProjectBoardPage } from './pages/ProjectBoardPage.tsx';
+import { ReportsPage } from './pages/ReportsPage.tsx';
 import { MembersPage } from './pages/MembersPage.tsx';
 
 const queryClient = new QueryClient({
@@ -47,6 +48,7 @@ export function App() {
               <Route path="/" element={<Navigate to="/projects" replace />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id" element={<ProjectBoardPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
               <Route path="/members" element={<MembersPage />} />
             </Route>
           </Route>

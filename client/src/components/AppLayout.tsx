@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { FolderKanban, Users, Menu, LogOut, Building2 } from 'lucide-react';
+import { FolderKanban, Users, BarChart3, Menu, LogOut, Building2 } from 'lucide-react';
 import { useAuthStore } from '../lib/store.ts';
 import { useSocket } from '../lib/useSocket.ts';
 import { Button } from './ui/button.tsx';
 import { Sheet } from './ui/sheet.tsx';
+import { NotificationPopover } from './NotificationPopover.tsx';
 import { cn } from '../lib/utils.ts';
 
 export function AppLayout() {
@@ -17,6 +18,7 @@ export function AppLayout() {
 
   const navItems = [
     { name: 'Projects', to: '/projects', icon: FolderKanban },
+    { name: 'Reports', to: '/reports', icon: BarChart3 },
     { name: 'Members', to: '/members', icon: Users },
   ];
 
@@ -106,6 +108,7 @@ export function AppLayout() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <NotificationPopover />
             <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-border inline-flex items-center gap-1.5 bg-card">
               <span className={isConnected ? 'text-[#22c55e]' : 'text-zinc-500'}>
                 {isConnected ? '●' : '○'}

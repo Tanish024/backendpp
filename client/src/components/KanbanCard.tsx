@@ -16,6 +16,8 @@ export interface TaskItem {
   estimateHours?: number | null;
   taskNumber?: number | string | null;
   assigneeId?: { _id: string; name: string; email: string } | null;
+  labels?: string[];
+  sprintId?: string | null;
 }
 
 interface KanbanCardProps {
@@ -80,6 +82,18 @@ export function KanbanCard({ task, disabled, projectKey, onClick }: KanbanCardPr
         </div>
       )}
       <p className="text-sm font-normal text-foreground leading-snug mb-2">{task.title}</p>
+      {task.labels && task.labels.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {task.labels.map((l) => (
+            <span
+              key={l}
+              className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border/50"
+            >
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
         <div className="flex items-center gap-2">
           <span

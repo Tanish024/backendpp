@@ -57,6 +57,10 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['comments'] });
     });
 
+    socket.on('notification:new', () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
