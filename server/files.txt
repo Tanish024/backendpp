@@ -1,0 +1,140 @@
+import { getTenantContextOrNull } from './tenant-context.js';
+
+const ESCAPE_HATCHES = new Set([
+  'authBypass',
+  'switchWorkspace',
+  'acceptInvite',
+]);
+
+function injectWorkspaceId(query, methodName) {
+  const ctx = getTenantContextOrNull();
+  if (!ctx) {
+    throw new Error(`Tenant context required for ${methodName}(). Wrap in runWithTenant() or use an escape hatch.`);
+  }
+  if (ESCAPE_HATCHES.has(ctx.escape)) return;
+  query.where({ workspaceId: ctx.workspaceId });
+}
+
+export function tenantPlugin(schema) {
+  schema.pre(['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete',
+    'updateOne', 'updateMany', 'deleteOne', 'deleteMany',
+    'countDocuments'], function () {
+    injectWorkspaceId(this, this.op);
+  });
+
+  schema.pre('aggregate', function () {
+    const ctx = getTenantContextOrNull();
+    if (!ctx) {
+      throw new Error('Tenant context required for aggregate(). Wrap in runWithTenant().');
+    }
+    if (ESCAPE_HATCHES.has(ctx.escape)) return;
+    this.pipeline().unshift({ $match: { workspaceId: ctx.workspaceId } });
+  });
+
+  schema.pre('validate', function () {
+    const ctx = getTenantContextOrNull();
+    if (!ctx) {
+      throw new Error('Tenant context required for validate(). Wrap in runWithTenant().');
+    }
+    if (ESCAPE_HATCHES.has(ctx.escape)) return;
+    if (!this.workspaceId) {
+      this.workspaceId = ctx.workspaceId;
+    } else if (this.workspaceId.toString() !== ctx.workspaceId.toString()) {
+      throw new Error('workspaceId mismatch on validate()');
+    }
+  });
+
+  schema.pre('insertMany', function (next, docs) {
+    const ctx = getTenantContextOrNull();
+    if (!ctx) {
+      throw new Error('Tenant context required for insertMany().');
+    }
+    if (ESCAPE_HATCHES.has(ctx.escape)) return next();
+    for (const doc of docs) {
+      if (!doc.workspaceId) doc.workspaceId = ctx.workspaceId;
+    }
+    next();
+  });
+}
+ 
+===== 
+import { Router } from 'express';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+import mongoose from 'mongoose';
+import { env } from '../config/env.js';
+import { Workspace } from '../models/Workspace.js';
+import { Membership } from '../models/Membership.js';
+import { AppError } from '../lib/errors.js';
+import { authUser } from '../middleware/auth-user.js';
+import { runWithTenant } from '../lib/tenant-context.js';
+
+const router = Router();
+
+const createSchema = z.object({
+  name: z.string().min(1).max(100),
+  slug: z.string().min(2).max(40).regex(/^[a-z0-9-]+$/),
+});
+
+router.post('/', authUser, async (req, res) => {
+  const { name, slug } = createSchema.parse(req.body);
+  const existing = await Workspace.findOne({ slug });
+  if (existing) throw new AppError(409, 'Slug already taken');
+  const wsId = new mongoose.Types.ObjectId();
+  const workspace = await Workspace.create({ _id: wsId, name, slug, ownerId: req.auth.userId });
+  await runWithTenant({ escape: 'authBypass' }, () =>
+    Membership.create({ workspaceId: wsId, userId: req.auth.userId, role: 'owner' }),
+  );
+  const token = jwt.sign(
+    { sub: req.auth.userId, wid: wsId.toString(), role: 'owner' },
+    env.JWT_SECRET,
+    { expiresIn: env.JWT_EXPIRES_IN },
+  );
+  res.status(201).json({ workspace, token });
+});
+
+router.get('/', authUser, async (req, res) => {
+  const memberships = await runWithTenant({ escape: 'authBypass' }, () =>
+    Membership.find({ userId: req.auth.userId, status: 'active' }).lean(),
+  );
+  const wsIds = memberships.map((m) => m.workspaceId);
+  const workspaces = await Workspace.find({ _id: { $in: wsIds } }).lean();
+  res.json({ workspaces });
+});
+
+router.post('/:id/switch', authUser, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError(403, 'Not a member of this workspace');
+  }
+  const membership = await runWithTenant({ escape: 'switchWorkspace' }, () =>
+    Membership.findOne({ workspaceId: req.params.id, userId: req.auth.userId, status: 'active' }),
+  );
+  if (!membership) throw new AppError(403, 'Not a member of this workspace');
+  const token = jwt.sign(
+    { sub: req.auth.userId, wid: membership.workspaceId.toString(), role: membership.role },
+    env.JWT_SECRET,
+    { expiresIn: env.JWT_EXPIRES_IN },
+  );
+  res.json({ token, role: membership.role });
+});
+
+export { router as workspaceRouter };
+===== 
+import mongoose from 'mongoose';
+import { tenantPlugin } from '../lib/tenant-plugin.js';
+
+const membershipSchema = new mongoose.Schema(
+  {
+    workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    role: { type: String, enum: ['owner', 'admin', 'member', 'guest'], required: true },
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, enum: ['active', 'pending'], default: 'active' },
+  },
+  { timestamps: true },
+);
+
+membershipSchema.index({ workspaceId: 1, userId: 1 }, { unique: true });
+membershipSchema.plugin(tenantPlugin);
+
+export const Membership = mongoose.model('Membership', membershipSchema);
