@@ -28,8 +28,9 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
-        window.location.href = '/login';
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+        window.location.href = `${base}/login`;
       }
     }
     return Promise.reject(error);
